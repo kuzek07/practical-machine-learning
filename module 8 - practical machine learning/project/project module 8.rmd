@@ -1,0 +1,171 @@
+---
+title: "Practical Machine Learning Prediction Project"
+author: "M Khuzaimi Mahamad"
+date: "27 May 2017"
+output: html_document
+---
+
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Data
+
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+
+##1. Set Librarries
+Load required librarries to complete this analysis
+```{r message=FALSE}
+rm(list=ls())
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+#library(RGtk2)
+#library(rattle)
+library(randomForest)
+library(corrplot)
+set.seed(12345)
+```
+
+##2. Download Dataset
+
+Next step is to download and partition train dataset into 2;
+i. train data set (70%)
+ii. test data set (30%)
+
+The actual test dataset would only be used to validate our prediction model
+
+```{r}
+## set the URL for the download
+UrlTrain <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+UrlTest  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+## download the datasets
+train <- read.csv(url(UrlTrain))
+test  <- read.csv(url(UrlTest))
+
+## create a partition with the training dataset 
+inTrain  <- createDataPartition(train$classe, p=0.7, list=FALSE)
+TrainDS <- train[inTrain, ]
+TestDS  <- train[-inTrain, ]
+dim(TrainDS)
+dim(TestDS)
+```
+
+##3. Clean Data
+
+Transformation is done to clean the data with;
+i. Near zero variance
+ii. NA values
+iii. Identification variables 
+
+```{r}
+## remove variables with Nearly Zero Variance
+nzv <- nearZeroVar(TrainDS)
+TrainDS <- TrainDS[, -nzv]
+TestDS  <- TestDS[, -nzv]
+dim(TrainDS)
+dim(TestDS)
+
+## remove variables that are mostly NA
+allNA    <- sapply(TrainDS, function(x) mean(is.na(x))) > 0.95
+TrainDS <- TrainDS[, allNA==FALSE]
+TestDS  <- TestDS[, allNA==FALSE]
+dim(TrainDS)
+dim(TestDS)
+
+## remove identification only variables (columns 1 to 5)
+TrainDS <- TrainDS[, -(1:5)]
+TestDS  <- TestDS[, -(1:5)]
+dim(TrainDS)
+dim(TestDS)
+```
+
+After transformation is done, number of variables has reduce to 'r TrainDS'.
+
+##4. Correlation Analysis
+
+```{r}
+corMatrix <- cor(TrainDS[, -54])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+
+As correlation (shown in dark color), further pre-processing steps like PCA is not required. 
+
+
+##5. Building Prediction Model
+We will build our prediction model using 3 methods;
+i. Random Forest
+ii. Decision Tree
+iii. Generalized Boosted Model
+
+###i.Random Forest
+
+```{r}
+###Model Fit using train dataset
+set.seed(12345)
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modelRF <- train(classe ~ ., data=TrainDS, method="rf", trControl=controlRF)
+modelRF$finalModel
+
+###prediction on Test dataset
+predictRF <- predict(modelRF, newdata=TestDS)
+confidenceRF <- confusionMatrix(predictRF, TestDS$classe)
+confidenceRF
+```
+
+
+###ii. Decision Tree
+
+```{r}
+###Model Fit using train dataset
+set.seed(12345)
+modelDT <- rpart(classe ~ ., data=TrainDS, method="class")
+rpart.plot(modelDT)
+
+###prediction on Test dataset
+predictDT <- predict(modelDT, newdata=TestDS, type="class")
+confidenceDT <- confusionMatrix(predictDT, TestDS$classe)
+confidenceDT
+```
+
+
+###iii. Generalized Boosted Model
+
+```{r}
+### model fit using train dataset
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modelGBM  <- train(classe ~ ., data=TrainDS, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modelGBM$finalModel
+
+###prediction on Test dataset
+predictGBM <- predict(modelGBM, newdata=TestDS)
+confidenceGBM <- confusionMatrix(predictGBM, TestDS$classe)
+confidenceGBM
+```
+
+
+##6. Applying to test data
+
+The accuracy of the 3 regression modeling methods above are:
+Random Forest : 0.9963
+Decision Tree : 0.7368
+GBM : 0.9839
+
+Based on the result, Random Forest method is selected to be applied on test dataset. 
+
+```{r}
+predictTEST <- predict(modelRF, newdata=test)
+predictTEST
+```
+
